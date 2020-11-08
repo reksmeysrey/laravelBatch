@@ -44,67 +44,47 @@ class Batch implements BatchInterface
      * ];
      * $index = 'id';
      */
-    public function update(Model $table, array $values, string $index = null, bool $raw = false)
+    public function update(Model $table, array $values, string $index = null, $self = false, $sign = '-', $where = '')
     {
         $final = [];
         $ids = [];
 
-              if (!count($values)) {
-                return false;
-            }
-    
-            if (!isset($index) || empty($index)) {
-                $index = $table->getKeyName();
-            }
-    
-            foreach ($values as $key => $val) {
-                $ids[] = $val[$index];
+        if (!count($values)) {
+            return false;
+        }
 
-                if ($table->usesTimestamps()) {
-                    $updatedAtColumn = $table->getUpdatedAtColumn();
-    
-                    if (!isset($val[$updatedAtColumn])) {
-                        $val[$updatedAtColumn] = now()->format($table->getDateFormat());
-                    }
-                }
+        if (!isset($index) || empty($index)) {
+            $index = $table->getKeyName();
+        }
 
+        foreach ($values as $key => $val) {
+            $ids[] = $val[$index];
+            if ($self) {
                 foreach (array_keys($val) as $field) {
                     if ($field !== $index) {
-                        $finalField = $raw ? Common::mysql_escape($val[$field]) : "'" . Common::mysql_escape($val[$field]) . "'";
-                        $value = (is_null($val[$field]) ? 'NULL' : $finalField);
-                        $final[$field][] = 'WHEN `' . $index . '` = \'' . $val[$index] . '\' THEN ' . $value . ' ';
+                        $value = (is_null($val[$field]) ? 'NULL' : '' . Common::mysql_escape($val[$field]) . '');
+                        $final[$field][] = 'WHEN `' . $index . '` = "' . $val[$index] . '" THEN `' . $field . '`' . $sign . $value . ' ';
+                    }
+                }
+
+
+            } else {
+                foreach (array_keys($val) as $field) {
+                    if ($field !== $index) {
+                        $value = (is_null($val[$field]) ? 'NULL' : '"' . Common::mysql_escape($val[$field]) . '"');
+                        $final[$field][] = 'WHEN `' . $index . '` = "' . $val[$index] . '" THEN ' . $value . ' ';
                     }
                 }
             }
-    
-            $connection = config('database.default');
-    
-            $driver = config("database.connections.{$connection}.driver");
-    
-            if ( $driver == 'pgsql' ){
-    
-                $cases = '';
-                foreach ($final as $k => $v) {
-                    $cases .= '"' . $k . '" = (CASE ' . implode("\n", $v) . "\n"
-                        . 'ELSE "' . $k . '" END), ';
-                }
-    
-                $query = "UPDATE \"" . $this->getFullTableName($table) . '" SET ' . substr($cases, 0, -2) . " WHERE \"$index\" IN('" . implode("','", $ids) . "');";
-    
-            }else{
-    
-                $cases = '';
-                foreach ($final as $k => $v) {
-                    $cases .= '`' . $k . '` = (CASE ' . implode("\n", $v) . "\n"
-                        . 'ELSE `' . $k . '` END), ';
-                }
-    
-                $query = "UPDATE `" . $this->getFullTableName($table) . "` SET " . substr($cases, 0, -2) . " WHERE `$index` IN(" . '"' . implode('","', $ids) . '"' . ");";
-    
-            }
-    
-    
-            return $this->db->connection($this->getConnectionName($table))->update($query);
+        }
+        $cases = '';
+        foreach ($final as $k => $v) {
+            $cases .= '`' . $k . '` = (CASE ' . implode("\n", $v) . "\n"
+                . 'ELSE `' . $k . '` END), ';
+        }
+
+        $query = "UPDATE `" . $this->getFullTableName($table) . "` SET " . substr($cases, 0, -2) . " WHERE `$index` IN(" . '"' . implode('","', $ids) . '"' . ") $where;";
+        return $this->db->connection($this->getConnectionName($table))->update($query);
     }
 
     /**
